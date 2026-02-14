@@ -1,0 +1,36 @@
+services:
+  # Squid proxy limits network access.
+  proxy:
+    build: ./proxy
+    container_name: sidecar_proxy
+    privileged: true  # Required for sysctl (route_localnet)
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./squid-config:/etc/squid
+      # Force DNS configuration (didn't figure out a way to make Docker's stock DNS to work here)
+      - ./resolv.conf:/etc/resolv.conf:ro
+    networks:
+      - external_net
+
+  # Sandbox for running commands.
+  sandbox:
+    image: ubuntu:24.04
+    container_name: sandbox
+    network_mode: service:proxy
+    # Keep container alive
+    command: tail -f /dev/null
+    volumes:
+      # Mount DNS configuration
+      - ./resolv.conf:/etc/resolv.conf:ro
+      # Mount the proxy's generated certificate into the app
+      - ./squid-config/ssl_cert/myCA.pem:/etc/ssl/certs/proxy-ca.pem:ro
+    environment:
+      # Tell curl (and other tools) to use this CA file
+      - CURL_CA_BUNDLE=/etc/ssl/certs/proxy-ca.pem
+      - SSL_CERT_FILE=/etc/ssl/certs/proxy-ca.pem
+      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/proxy-ca.pem
+
+networks:
+  external_net:
+    driver: bridge
